@@ -1,0 +1,11 @@
+feature_extractor:
+  _target_: torchvision.models.detection.backbone_utils.resnet_fpn_backbone
+  backbone_name: 'resnet18'
+  weights: null
+  trainable_layers: 5
+
+name: 'res18fpn'
+feat_dim: 256
+trx_ff_dim: 512
+layer: '-1'
+num_levels: 4

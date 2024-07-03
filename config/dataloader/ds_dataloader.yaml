@@ -1,0 +1,9 @@
+defaults:
+  - dataset: ds_gt_calib
+  - _self_
+
+batch_size: 16
+test_batch_size: 1
+workers: 16
+roi: [-8, 10, -3, 3, 0, 30]
+vox: [3, 1.5, 0.75, 0.375]

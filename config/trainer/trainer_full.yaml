@@ -1,0 +1,16 @@
+epochs: 20
+logdir: 'logs'
+logdir_name: 'odtformer'
+# load checkpoint path for resume training
+loadckpt: ''
+resume: False
+seed: 1
+summary_freq: 20
+# visualization log
+vis_log_freq: 900
+save_freq: 1
+loss: 'iou'
+loss_weights: '.30, .27, .23, .20'
+# placeholder config, don't change
+distributed: False
+lr_scheduler: 'cos'

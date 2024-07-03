@@ -1,0 +1,16 @@
+defaults:
+  - model: odtformer
+  - dataloader: ds_dataloader
+  - trainer: trainer_full
+  - optimizer: adamw
+  - dist: ddp
+  - override hydra/hydra_logging: disabled
+  - _self_
+
+use_wandb: True
+# Don't create hydra output directories
+hydra:
+  output_subdir: ~
+  run:
+    dir: .
+

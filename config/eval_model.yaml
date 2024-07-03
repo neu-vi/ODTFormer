@@ -1,0 +1,9 @@
+defaults:
+  - model: odtformer
+  - dataloader: ds_dataloader
+  - _self_
+
+# path to the checkpoint being evaluated
+ckpt_path: '.../best.ckpt'
+# different depth ranges proportion for evaluation (0.0 - 1.0)
+depth_range: [0.5, 1.0]

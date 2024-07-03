@@ -1,0 +1,11 @@
+defaults:
+  - backbone: enb0fpn
+  - decoder_layer: deformable_attn
+  - _self_
+
+_target_: models.ODTFormer
+roi_scale: ${dataloader.roi}
+voxel_sizes: ${dataloader.vox}
+use_ooi_embed: True
+# set for multiple decoders with different num_layers
+num_decoder_layers: [3]

@@ -1,0 +1,9 @@
+_target_: models.deformable_transformer.DeformableTransformerDecoderLayer
+d_model: ${model.backbone.feat_dim}
+num_heads: 8
+ff_dim: ${model.backbone.trx_ff_dim}
+num_cams: 2
+num_levels: 4
+num_points: 16
+dropout: 0.3
+attn_name: 'deformable_attn'

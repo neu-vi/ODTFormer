@@ -1,0 +1,9 @@
+feature_extractor:
+  _target_: models.efficientnet.EfficientNetB0FPN
+  weights: null
+
+name: 'enb0fpn'
+feat_dim: 128
+trx_ff_dim: 256
+layer: '-1'
+num_levels: 4
