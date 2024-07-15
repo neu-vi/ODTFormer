@@ -14,8 +14,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.init import xavier_uniform_, constant_, normal_
 
-import warnings
-
 # local
 from .ms_deform_attn_func import ms_deform_attn_core_pytorch
 
@@ -65,7 +63,6 @@ class VoxDeformCrossAttn(nn.Module):
         sample_size = torch.tensor([sample_size, sample_size, sample_size], device=reference_points.device)
         denorm_offsets = -sample_size / 2 + sampling_offsets * sample_size
 
-        ############################################################################
         if reference_points.shape[-1] == 3:
             # B, Lq, 3 -> B, Lq, N, num_points, 3
             sampling_locations = reference_points[..., None, None, :] + denorm_offsets
@@ -95,7 +92,6 @@ class VoxDeformCrossAttn(nn.Module):
                                    spatial_shapes,
                                    proj_sampling_locations)
 
-        # updated_query = torch.mean(queries, dim=1)
         return self.dropout(queries) + inp_residual
 
 
@@ -118,12 +114,9 @@ class MVDeformAttn(nn.Module):
         self.num_cams = num_cams
         self.num_heads = num_heads
         self.num_levels = num_levels
-        # self.num_points = num_points
         self.num_points = num_points
         self.dim_per_head = dim_per_head
 
-        # self.offset_sampler = OffsetSampler(d_model, num_heads, num_levels, 1, num_points)
-        # self.offsets = torch.tensor([[i - 1, j - 1] for i in range(3) for j in range(3)])
         self.attention_weights = nn.Linear(d_model, self.num_heads * self.num_points)
         self.matching_layer = nn.ModuleList([nn.Sequential(
             nn.Linear(2 * dim_per_head, 2 * dim_per_head, bias=False),
@@ -165,7 +158,6 @@ class MVDeformAttn(nn.Module):
         @param value:
         @param spatial_shapes: 2xH, W
         @param sampling_locations: B, Lq, N, L, T, num_points, 2 - x, y
-        @param feature_weights: B, Lq, N, num_points, L - point-wise feature weights of each level
         @return:
         """
         if not self.batch_first:
@@ -185,34 +177,16 @@ class MVDeformAttn(nn.Module):
         value = value.view(bs, num_value, self.num_heads, self.dim_per_head)
 
         # H, W -> X, Y
-        view_spatial_shape = torch.flip(spatial_shapes, dims=(-1,)).float()
+        view_spatial_shapes = torch.flip(spatial_shapes, dims=(-1,))
         # L, 2
-        view_spatial_shape[..., 1] /= self.num_cams
+        view_spatial_shapes[..., 1] //= self.num_cams
 
         attention_weights = self.attention_weights(query).view(bs, num_query, self.num_heads, self.num_points)
         attention_weights = F.softmax(attention_weights, -1).view(bs, num_query, self.num_heads, self.num_points)
 
-        for level in range(self.num_levels):
-            # y < 0 bound for cam1
-            oot_mask = sampling_locations[..., level, :, :, :][..., 1, :, 1] > 0.
-            # y > H bound for cam0
-            oob_mask = sampling_locations[..., level, :, :, :][..., 0, :, 1] > view_spatial_shape[level, 1]
-
-            ignore_mask = torch.zeros_like(oot_mask).bool()
-            oot_mask = torch.stack([ignore_mask, oot_mask], dim=-2)
-            oob_mask = torch.stack([oob_mask, ignore_mask], dim=-2)
-            sampling_locations[..., level, :, :, :][oot_mask | oob_mask] += torch.tensor(
-                [0., view_spatial_shape[level, 1]], device=sampling_locations.device)
-
-        # sampling_locations[..., 1, :, 1] += view_spatial_shape[..., None, 1]
-        offset_normalizer = torch.stack([spatial_shapes[..., 1], spatial_shapes[..., 0]], -1)
-        sampling_locations /= offset_normalizer[None, None, None, :, None, None, :]
-        # B, Lq, N, L, T, num_points, 2 -> B, Lq, N, L, T * num_points, 2
-        masked_sample_locations = sampling_locations.reshape(bs, num_query, self.num_heads, self.num_levels,
-                                                             self.num_cams * self.num_points, 2)
-
-        output = ms_deform_attn_core_pytorch(value, spatial_shapes, masked_sample_locations, self.matching_layer,
-                                             self.feature_distillation, attention_weights)
+        sampling_locations /= view_spatial_shapes[None, None, None, :, None, None, :]
+        output = ms_deform_attn_core_pytorch(value, spatial_shapes, self.num_cams, sampling_locations,
+                                             self.matching_layer, self.feature_distillation, attention_weights)
 
         output = self.output_proj(output)
         if not self.batch_first:

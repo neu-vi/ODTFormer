@@ -3,7 +3,7 @@ import numpy as np
 import torchvision.transforms as transforms
 
 
-def get_transform(color_jitter):
+def get_transform(color_jitter, resize_shape):
     mean = [0.485, 0.456, 0.406]
     std = [0.229, 0.224, 0.225]
     transform_list = []
@@ -13,6 +13,7 @@ def get_transform(color_jitter):
             contrast=0.4,
             saturation=0.4,
         ))
+    transform_list.append(transforms.Resize(resize_shape))
     transform_list.append(transforms.ToTensor())
     transform_list.append(transforms.Normalize(mean=mean, std=std))
     return transforms.Compose(transform_list)

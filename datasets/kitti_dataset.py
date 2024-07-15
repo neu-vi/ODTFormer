@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 import warnings
+from PIL import Image
 
 from .data_io import get_transform, read_all_lines
 from .voxel_dataset import VoxelDataset
@@ -10,9 +11,9 @@ from models.wrappers import Camera, Pose
 
 class VoxelKITTIDataset(VoxelDataset):
     def __init__(self, datapath, list_filename, training, roi_scale, voxel_sizes, transform=True, *,
-                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 10, 5)):
+                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 10, 5), resize_shape=None):
         super().__init__(datapath, roi_scale, voxel_sizes, transform, filter_ground=filter_ground,
-                         color_jitter=color_jitter, occupied_gates=occupied_gates)
+                         color_jitter=color_jitter, occupied_gates=occupied_gates, resize_shape=resize_shape)
         self.left_filenames = None
         self.right_filenames = None
         self.disp_filenames = None
@@ -127,8 +128,8 @@ class VoxelKITTIDataset(VoxelDataset):
         return len(self.left_filenames)
 
     def __getitem__(self, index):
-        left_img = self.load_image(os.path.join(self.datapath, self.left_filenames[index]))
-        right_img = self.load_image(os.path.join(self.datapath, self.right_filenames[index]))
+        left_img_ = self.load_image(os.path.join(self.datapath, self.left_filenames[index]))
+        right_img_ = self.load_image(os.path.join(self.datapath, self.right_filenames[index]))
         T_world_cam_101, cam_101, T_world_cam_103, cam_103 = self.load_calib(
             os.path.join(self.datapath, self.calib_filenames[index]))
         disp_gt = None
@@ -139,32 +140,33 @@ class VoxelKITTIDataset(VoxelDataset):
         T_world_cam_101 = torch.from_numpy(T_world_cam_101)
         T_world_cam_103 = torch.from_numpy(T_world_cam_103)
 
-        w, h = left_img.size
+        w, h = left_img_.size
         crop_w, crop_h = 1224, 370
 
-        processed = get_transform(self.color_jitter)
+        if self.resize_shape is None:
+            self.resize_shape = (crop_h, crop_w)
+        scale = self.resize_shape[1] / crop_w, self.resize_shape[0] / crop_h
+        processed = get_transform(self.color_jitter, self.resize_shape)
         left_top = [0, 0]
 
         if self.transform:
             if w < crop_w:
-                left_img = processed(left_img).numpy()
-                right_img = processed(right_img).numpy()
-
                 w_pad = crop_w - w
-                left_img = np.lib.pad(
-                    left_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
-                right_img = np.lib.pad(
-                    right_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
-                if disp_gt is not None:
-                    disp_gt = np.lib.pad(disp_gt, ((0, 0), (0, w_pad)), mode='constant', constant_values=0)
+                h_pad = max(crop_h - h, 0)
+                left_img = Image.new(left_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                left_img.paste(left_img_, (0, 0))
+                right_img = Image.new(right_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                right_img.paste(right_img_, (0, 0))
+                disp_gt = np.lib.pad(
+                    disp_gt, ((0, 0), (h_pad, w_pad)), mode='constant', constant_values=0)
 
-                left_img = torch.Tensor(left_img)
-                right_img = torch.Tensor(right_img)
+                left_img = processed(left_img)
+                right_img = processed(right_img)
             else:
                 w_crop = w - crop_w
                 h_crop = h - crop_h
-                left_img = left_img.crop((w_crop, h_crop, w, h))
-                right_img = right_img.crop((w_crop, h_crop, w, h))
+                left_img = left_img_.crop((w_crop, h_crop, w, h))
+                right_img = right_img_.crop((w_crop, h_crop, w, h))
                 if disp_gt is not None:
                     disp_gt = disp_gt[h_crop: h, w_crop: w]
 
@@ -174,13 +176,11 @@ class VoxelKITTIDataset(VoxelDataset):
         else:
             w_crop = w - crop_w
             h_crop = h - crop_h
-            left_img = left_img.crop((w_crop, h_crop, w, h))
-            right_img = right_img.crop((w_crop, h_crop, w, h))
+            left_img = left_img_.crop((w_crop, h_crop, w, h))
+            right_img = right_img_.crop((w_crop, h_crop, w, h))
             left_img = np.asarray(left_img)
             right_img = np.asarray(right_img)
             left_top = [w_crop, h_crop]
-
-        left_top = np.repeat(np.array([left_top]), repeats=2, axis=0)
 
         filtered_cloud_gt = None
         all_vox_grid_gt = []
@@ -209,31 +209,34 @@ class VoxelKITTIDataset(VoxelDataset):
                 except Exception as e:
                     raise RuntimeError('Error in calculating voxel grids from point cloud')
 
-        imc, imh, imw = left_img.shape
-        cam_101 = np.concatenate(([imw, imh], cam_101)).astype(np.float32)
-        cam_103 = np.concatenate(([imw, imh], cam_103)).astype(np.float32)
+        cam_101 = Camera(torch.tensor(np.concatenate(([w, h], cam_101)).astype(np.float32)))
+        cam_101 = cam_101.crop(left_top, torch.tensor([crop_w, crop_h]))
+        cam_101 = cam_101.scale(scale)
+        cam_103 = Camera(torch.tensor(np.concatenate(([w, h], cam_103)).astype(np.float32)))
+        cam_103 = cam_103.crop(left_top, torch.tensor([crop_w, crop_h]))
+        cam_103 = cam_103.scale(scale)
 
         return {'left': left_img,
                 'right': right_img,
                 'T_world_cam_101': T_world_cam_101,
-                'cam_101': cam_101,
+                'cam_101': cam_101.data,
                 'T_world_cam_103': T_world_cam_103,
-                'cam_103': cam_103,
+                'cam_103': cam_103.data,
                 'voxel_grid': all_vox_grid_gt if len(all_vox_grid_gt) >= 0 else 'null',
                 'point_cloud': filtered_cloud_gt.astype(
                     np.float32).tobytes() if filtered_cloud_gt is not None else 'null',
-                'left_top': left_top,
                 "left_filename": self.left_filenames[index]}
 
 
 class VoxelKITTIRaw(VoxelKITTIDataset):
     def __init__(self, datapath, list_filename, training, roi_scale, voxel_sizes, transform=True, *,
-                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 10, 5)):
+                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 10, 5), resize_shape=None):
         self.velo2cam_filenames = None
         self.velo_filenames = None
         self.velo2cam = None
         super().__init__(datapath, list_filename, training, roi_scale, voxel_sizes, transform,
-                         filter_ground=filter_ground, color_jitter=color_jitter, occupied_gates=occupied_gates)
+                         filter_ground=filter_ground, color_jitter=color_jitter, occupied_gates=occupied_gates,
+                         resize_shape=resize_shape)
 
     def load_path(self, list_filename):
         lines = read_all_lines(list_filename)
@@ -282,8 +285,8 @@ class VoxelKITTIRaw(VoxelKITTIDataset):
         return scan
 
     def __getitem__(self, index):
-        left_img = self.load_image(os.path.join(self.datapath, self.left_filenames[index]))
-        right_img = self.load_image(os.path.join(self.datapath, self.right_filenames[index]))
+        left_img_ = self.load_image(os.path.join(self.datapath, self.left_filenames[index]))
+        right_img_ = self.load_image(os.path.join(self.datapath, self.right_filenames[index]))
         T_world_cam_101, cam_101, T_world_cam_103, cam_103 = self.load_calib(
             os.path.join(self.datapath, self.calib_filenames[index]))
         self.load_velo2cam(os.path.join(self.datapath, self.velo2cam_filenames[index]))
@@ -295,30 +298,29 @@ class VoxelKITTIRaw(VoxelKITTIDataset):
         T_world_cam_101 = torch.from_numpy(T_world_cam_101)
         T_world_cam_103 = torch.from_numpy(T_world_cam_103)
 
-        w, h = left_img.size
+        w, h = left_img_.size
         crop_w, crop_h = 1224, 370
 
-        processed = get_transform(self.color_jitter)
+        if self.resize_shape is None:
+            self.resize_shape = (crop_h, crop_w)
+        scale = self.resize_shape[1] / crop_w, self.resize_shape[0] / crop_h
+        processed = get_transform(self.color_jitter, self.resize_shape)
         left_top = [0, 0]
 
         if self.transform:
             if w < crop_w:
-                left_img = processed(left_img).numpy()
-                right_img = processed(right_img).numpy()
+                left_img = Image.new(left_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                left_img.paste(left_img_, (0, 0))
+                right_img = Image.new(right_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                right_img.paste(right_img_, (0, 0))
 
-                w_pad = crop_w - w
-                left_img = np.lib.pad(
-                    left_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
-                right_img = np.lib.pad(
-                    right_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
-
-                left_img = torch.Tensor(left_img)
-                right_img = torch.Tensor(right_img)
+                left_img = processed(left_img)
+                right_img = processed(right_img)
             else:
                 w_crop = w - crop_w
                 h_crop = h - crop_h
-                left_img = left_img.crop((w_crop, h_crop, w, h))
-                right_img = right_img.crop((w_crop, h_crop, w, h))
+                left_img = left_img_.crop((w_crop, h_crop, w, h))
+                right_img = right_img_.crop((w_crop, h_crop, w, h))
 
                 left_img = processed(left_img)
                 right_img = processed(right_img)
@@ -326,23 +328,24 @@ class VoxelKITTIRaw(VoxelKITTIDataset):
         else:
             w_crop = w - crop_w
             h_crop = h - crop_h
-            left_img = left_img.crop((w_crop, h_crop, w, h))
-            right_img = right_img.crop((w_crop, h_crop, w, h))
+            left_img = left_img_.crop((w_crop, h_crop, w, h))
+            right_img = right_img_.crop((w_crop, h_crop, w, h))
             left_img = np.asarray(left_img)
             right_img = np.asarray(right_img)
             left_top = [w_crop, h_crop]
 
-        left_top = np.repeat(np.array([left_top]), repeats=2, axis=0)
-
-        imc, imh, imw = left_img.shape
-        cam_101 = np.concatenate(([imw, imh], cam_101)).astype(np.float32)
-        cam_103 = np.concatenate(([imw, imh], cam_103)).astype(np.float32)
+        cam_101 = Camera(torch.tensor(np.concatenate(([w, h], cam_101)).astype(np.float32)))
+        cam_101 = cam_101.crop(left_top, [crop_w, crop_h])
+        cam_101 = cam_101.scale(scale)
+        cam_103 = Camera(torch.tensor(np.concatenate(([w, h], cam_103)).astype(np.float32)))
+        cam_103 = cam_103.crop(left_top, [crop_w, crop_h])
+        cam_103 = cam_103.scale(scale)
 
         filtered_cloud_gt = None
         all_vox_grid_gt = []
         if scan_gt is not None:
             scan_cam_101 = self.lidar_extrinsic.transform(scan_gt).numpy()
-            valid_scan = Camera(torch.from_numpy(cam_101)).project(scan_cam_101)[1]
+            valid_scan = cam_101.project(scan_cam_101)[1]
             cloud_gt = scan_cam_101[valid_scan]
             filtered_cloud_gt = self.filter_cloud(cloud_gt)
 
@@ -369,11 +372,10 @@ class VoxelKITTIRaw(VoxelKITTIDataset):
         return {'left': left_img,
                 'right': right_img,
                 'T_world_cam_101': T_world_cam_101,
-                'cam_101': cam_101,
+                'cam_101': cam_101.data,
                 'T_world_cam_103': T_world_cam_103,
-                'cam_103': cam_103,
+                'cam_103': cam_103.data,
                 'voxel_grid': all_vox_grid_gt if len(all_vox_grid_gt) >= 0 else 'null',
                 'point_cloud': filtered_cloud_gt.astype(
                     np.float32).tobytes() if filtered_cloud_gt is not None else 'null',
-                'left_top': left_top,
                 "left_filename": self.left_filenames[index]}

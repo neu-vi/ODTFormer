@@ -6,7 +6,7 @@ import hydra
 
 from .image_seq_tokenizer import ImageSeqTokenizer
 from .wrappers import Pose, Camera
-from .deformable_transformer import DeformableTransformerDecoder, create_sparse_tensor
+from .deformable_transformer import DeformableTransformerDecoder
 
 QUERY_SHAPES = [(6, 2, 10)]
 VOXEL_SIZES = [3]
@@ -60,7 +60,12 @@ def pos2posemb3d(pos, num_pos_feats=128, temperature=10000):
 
 
 class ODTFormer(nn.Module):
-    def __init__(self, backbone, decoder_layer, roi_scale, voxel_sizes, use_ooi_embed,
+    def __init__(self,
+                 backbone,
+                 decoder_layer,
+                 roi_scale,
+                 voxel_sizes,
+                 use_ooi_embed,
                  num_decoder_layers=(3, 1),
                  share_decoder=False):
         super(ODTFormer, self).__init__()
@@ -76,7 +81,7 @@ class ODTFormer(nn.Module):
 
         # reconstruction meta
         self.roi_scale = roi_scale  # [-16, 16, -31, 1, 0, 32]  # [min_x, max_x, min_y, max_y, min_z, max_z]
-        self.voxel_sizes = voxel_sizes  # [4., 2., 1., .5]  # level - 1, 2, 3, 4
+        self.voxel_sizes = voxel_sizes  # [3., 1.5, .75, .375]  # level - 1, 2, 3, 4
         self.depth_num = 64
 
         self.num_voxels = []
@@ -152,7 +157,6 @@ class ODTFormer(nn.Module):
 
             self.head = nn.ModuleList(head_l)
         #######################################################
-
         # initialization
         self.init_weights()
 
@@ -184,6 +188,9 @@ class ODTFormer(nn.Module):
                                           level_start_index,
                                           meta_data_no_cam,
                                           cameras):
+        """
+        parent_query_feat: B x L x C
+        """
         B, _, C = token_seq.shape
         T = cameras[0].shape[1]
 
@@ -259,8 +266,6 @@ class ODTFormer(nn.Module):
         # (B, T, 6), camera intrinsics: with, height, fx, fy, cx, cy
         camera_meta = torch.stack([cam_101, cam_103], dim=-2)
         camera = Camera(camera_meta.to(imL.device))
-        left_top = calib_meta['left_top'].to(imL.device)
-        camera = camera.crop(left_top, torch.tensor([[[iW, iH]]]).repeat(B, 2, 1).to(imL.device))
 
         featL_dict = self.get_backbone_features(imL)
         featR_dict = self.get_backbone_features(imR)
@@ -283,7 +288,6 @@ class ODTFormer(nn.Module):
             level_start_index.append(level_start_index[ix] + H_ * W_)
         level_start_index = torch.tensor(level_start_index[: -1], device=imL.device)
 
-        # num_cam
         T = 2
         # identity transformations
         identity = torch.eye(4, dtype=torch.float32).unsqueeze(0).unsqueeze(0).repeat(B, T, 1, 1).to(imL.device)

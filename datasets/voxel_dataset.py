@@ -8,7 +8,8 @@ from models import ref_points_generator
 
 
 class VoxelDataset(Dataset):
-    def __init__(self, datapath, roi_scale, voxel_sizes, transform, *, filter_ground, color_jitter, occupied_gates):
+    def __init__(self, datapath, roi_scale, voxel_sizes, transform, *, filter_ground, color_jitter, occupied_gates,
+                 resize_shape):
         self.datapath = datapath
         self.stored_gt = False
         # initialize as null
@@ -40,6 +41,7 @@ class VoxelDataset(Dataset):
         self.ground_y = None
         self.color_jitter = color_jitter
         self.occupied_gates = occupied_gates
+        self.resize_shape = resize_shape
 
     def load_path(self, list_filename):
         raise NotImplementedError

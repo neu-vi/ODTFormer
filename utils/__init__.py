@@ -2,8 +2,6 @@ from .experiment import *
 from .wandb_utils import *
 
 import torch.distributed as dist
-import torch.nn as nn
-import functools
 
 def find_free_port():
 	import socket

@@ -2,6 +2,7 @@ import os
 import numpy as np
 import torch
 import warnings
+from PIL import Image
 
 from .data_io import get_transform, read_all_lines
 from .voxel_dataset import VoxelDataset
@@ -10,9 +11,9 @@ from models.wrappers import Camera, Pose
 
 class VoxelDSDatasetCalib(VoxelDataset):
     def __init__(self, datapath, list_filename, training, roi_scale, voxel_sizes, transform=True, *,
-                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 20, 10)):
+                 filter_ground=True, color_jitter=False, occupied_gates=(20, 20, 20, 10), resize_shape=None):
         super().__init__(datapath, roi_scale, voxel_sizes, transform, filter_ground=filter_ground,
-                         color_jitter=color_jitter, occupied_gates=occupied_gates)
+                         color_jitter=color_jitter, occupied_gates=occupied_gates, resize_shape=resize_shape)
         self.left_filenames, self.right_filenames, self.depth_filenames, self.gt_filenames, self.calib_filenames = \
             self.load_path(list_filename)
         if training:
@@ -143,24 +144,25 @@ class VoxelDSDatasetCalib(VoxelDataset):
         w, h = left_img_.size
         crop_w, crop_h = 880, 400
 
-        processed = get_transform(self.color_jitter)
+        if self.resize_shape is None:
+            self.resize_shape = (crop_h, crop_w)
+        scale = self.resize_shape[1] / crop_w, self.resize_shape[0] / crop_h
+        processed = get_transform(self.color_jitter, self.resize_shape)
         left_top = [0, 0]
 
         if self.transform:
             if w < crop_w:
-                left_img = processed(left_img_).numpy()
-                right_img = processed(right_img_).numpy()
-
                 w_pad = crop_w - w
-                left_img = np.lib.pad(
-                    left_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
-                right_img = np.lib.pad(
-                    right_img, ((0, 0), (0, 0), (0, w_pad)), mode='constant', constant_values=0)
+                h_pad = max(crop_h - h, 0)
+                left_img = Image.new(left_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                left_img.paste(left_img_, (0, 0))
+                right_img = Image.new(right_img_.mode, (crop_w, crop_h), (0, 0, 0))
+                right_img.paste(right_img_, (0, 0))
                 depth_gt = np.lib.pad(
-                    depth_gt, ((0, 0), (0, w_pad)), mode='constant', constant_values=0)
+                    depth_gt, ((0, 0), (h_pad, w_pad)), mode='constant', constant_values=0)
 
-                left_img = torch.Tensor(left_img)
-                right_img = torch.Tensor(right_img)
+                left_img = processed(left_img)
+                right_img = processed(right_img)
             else:
                 w_crop = w - crop_w
                 h_crop = h - crop_h
@@ -179,8 +181,6 @@ class VoxelDSDatasetCalib(VoxelDataset):
             left_img = np.asarray(left_img_)
             right_img = np.asarray(right_img_)
             left_top = [w_crop, h_crop]
-
-        left_top = np.repeat(np.array([left_top]), repeats=2, axis=0)
 
         # canvas = np.zeros((400, 880, 3), dtype=np.float32)
         # left_img_ = np.asarray(left_img_)
@@ -208,19 +208,21 @@ class VoxelDSDatasetCalib(VoxelDataset):
             except Exception as e:
                 raise RuntimeError('Error in calculating voxel grids from point cloud')
 
-        imc, imh, imw = left_img.shape
-        cam_101 = np.concatenate(([imw, imh], cam_101)).astype(np.float32)
-        cam_103 = np.concatenate(([imw, imh], cam_103)).astype(np.float32)
+        cam_101 = Camera(torch.tensor(np.concatenate(([w, h], cam_101)).astype(np.float32)))
+        cam_101 = cam_101.crop(left_top, [crop_w, crop_h])
+        cam_101 = cam_101.scale(scale)
+        cam_103 = Camera(torch.tensor(np.concatenate(([w, h], cam_103)).astype(np.float32)))
+        cam_103 = cam_103.crop(left_top, [crop_w, crop_h])
+        cam_103 = cam_103.scale(scale)
 
         return {"left": left_img,
                 "right": right_img,
                 'T_world_cam_101': T_world_cam_101,
-                'cam_101': cam_101,
+                'cam_101': cam_101.data,
                 'T_world_cam_103': T_world_cam_103,
-                'cam_103': cam_103,
+                'cam_103': cam_103.data,
                 # "depth": depth_gt,
                 "voxel_grid": all_vox_grid_gt,
                 'point_cloud': filtered_cloud_gt.astype(np.float32).tobytes(),
                 # 'colored_point_cloud': colored_cloud_gt.astype(np.float32).tobytes(),
-                'left_top': left_top,
                 "left_filename": self.left_filenames[index]}

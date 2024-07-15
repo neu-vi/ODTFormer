@@ -151,7 +151,6 @@ class DeformableTransformerDecoder(nn.Module):
 
         if feature_level is not None:
             h, w = spatial_shape[feature_level].cpu().tolist()
-            ##############################################################
             start_index = level_start_index[feature_level]
             memory_hw = memory[..., start_index:start_index + int(h) * int(w), :].reshape(bs * num_view,
                                                                                           int(h / num_view), int(w), -1)
@@ -223,7 +222,7 @@ class DeformableTransformerDecoderLayer(nn.Module):
 
         # cross attention
         tgt2 = self.cross_attn(tgt, memory, spatial_shape,
-                               query_pos=query_pos,
+                               query_pos=None,
                                multiscale_cam=multiscale_cam,
                                reference_points=reference_points,
                                sample_size=sample_size)

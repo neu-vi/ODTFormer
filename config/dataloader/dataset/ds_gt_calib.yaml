@@ -1,24 +1,26 @@
-ds_filepath: '/work/vig/Datasets/DrivingStereo'
+ds_filepath: '.../DrivingStereo'
 ds_roi: [-8, 10, -3, 3, 0, 30]
 ds_vox: [3, 1.5, 0.75, 0.375]
 
 train_dataset:
   _target_: datasets.VoxelDSDatasetCalib
   datapath: ${dataloader.dataset.ds_filepath}
-  list_filename: '/work/vig/tianyed/StereoVoxelFormer/stereo-voxel-former/scripts/net/filenames/DS_train_gt_calib.txt'
+  list_filename: '.../ODTFormer/filenames/DS_train_gt_calib.txt'
   training: True
-  roi_scale: ${dataloader.ds_roi}
-  voxel_sizes: ${dataloader.ds_vox}
+  roi_scale: ${dataloader.roi}
+  voxel_sizes: ${dataloader.vox}
   transform: True
   color_jitter: True
   filter_ground: True
+  resize_shape: ${dataloader.resize_shape}
 
 test_dataset:
   _target_: datasets.VoxelDSDatasetCalib
   datapath: ${dataloader.dataset.ds_filepath}
-  list_filename: '/work/vig/tianyed/StereoVoxelFormer/stereo-voxel-former/scripts/net/filenames/DS_test_gt_calib.txt'
+  list_filename: '.../ODTFormer/filenames/DS_test_gt_calib.txt'
   training: False
-  roi_scale: ${dataloader.ds_roi}
-  voxel_sizes: ${dataloader.ds_vox}
+  roi_scale: ${dataloader.roi}
+  voxel_sizes: ${dataloader.vox}
   transform: True
   filter_ground: True
+  resize_shape: ${dataloader.resize_shape}

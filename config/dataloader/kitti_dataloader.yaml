@@ -1,0 +1,10 @@
+defaults:
+  - dataset: kitti_voxel
+  - _self_
+
+batch_size: 16
+test_batch_size: 4
+workers: 16
+ds_roi: [-9, 9, -3, 3, 0, 30]
+ds_vox: [3, 1.5, 0.75, 0.375]
+resize_shape: [400, 880]
