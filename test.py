@@ -46,7 +46,7 @@ def eval_model(cfg: DictConfig):
     for batch_idx, sample in enumerate(tqdm(TestImgLoader)):
         imgL, imgR, voxel_gt = sample['left'], sample['right'], sample['voxel_grid']
         calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                      'cam_101': sample['cam_101'], 'cam_103': sample['cam_103'], 'left_top': sample['left_top']}
+                      'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
 
         if torch.cuda.is_available():
             imgL = imgL.cuda()
@@ -122,7 +122,7 @@ def eval_ops(cfg: DictConfig):
     for sample in EvalImgLoader:
         imgL, imgR, voxel_gt = sample['left'], sample['right'], sample['voxel_grid']
         calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                      'cam_101': sample['cam_101'], 'cam_103': sample['cam_103'], 'left_top': sample['left_top']}
+                      'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
         if torch.cuda.is_available():
             imgL = imgL.cuda()
             imgR = imgR.cuda()

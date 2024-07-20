@@ -327,16 +327,16 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
                                                                                                           time.time() - start_time))
 
                 if do_vis_log and cfg.use_wandb:
-                    all_cloud_gt = np.frombuffer(sample['filtered_point_cloud'][0], dtype=np.float32).reshape(-1, 3)
+                    all_cloud_gt = np.frombuffer(sample['point_cloud'][0], dtype=np.float32).reshape(-1, 3)
                     voxel_est, voxel_gt = voxel_outputs
-                    start = [cfg.dataloader.ds_roi[0], cfg.dataloader.ds_roi[2], cfg.dataloader.ds_roi[4]]
+                    start = [cfg.dataloader.roi[0], cfg.dataloader.roi[2], cfg.dataloader.roi[4]]
                     # change by level
-                    voxel_size = cfg.dataloader.ds_vox[1]
+                    voxel_size = cfg.dataloader.vox[1]
                     corners_gt = utils.get_voxel_bbox(voxel_gt, start, [12, 4, 20], voxel_size)
                     corners_est = utils.get_voxel_bbox(voxel_est, start, [12, 4, 20], voxel_size,
                                                        bbox_size=voxel_size / 2, color=[0, 255, 255])
                     #################
-                    cloud_gt = utils.get_cmap_cloud(all_cloud_gt, cfg.dataloader.ds_roi)
+                    cloud_gt = utils.get_cmap_cloud(all_cloud_gt, cfg.dataloader.roi)
 
                     point_scene = wandb.Object3D(
                         {'type': 'lidar/beta', 'boxes': np.concatenate([corners_gt, corners_est], axis=0),
@@ -375,7 +375,7 @@ def train_sample(model, sample, optimizer, lr_scheduler, cfg, device):
 
     imgL, imgR, voxel_gt_list = sample['left'], sample['right'], sample['voxel_grid']
     calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103'], 'left_top': sample['left_top']}
+                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
 
     if torch.cuda.is_available():
         imgL = imgL.to(device, non_blocking=True)
@@ -386,7 +386,7 @@ def train_sample(model, sample, optimizer, lr_scheduler, cfg, device):
     optimizer.zero_grad()
 
     # with torch.cuda.amp.autocast():
-    voxel_ests = model(imgL, imgR, calib_meta=calib_meta, training=True, voxel_gt=voxel_gt_list)
+    voxel_ests = model(imgL, imgR, calib_meta=calib_meta)
     loss, iou = model_loss(voxel_ests, voxel_gt_list, cfg.trainer.loss_weights, cfg.trainer.loss)
     iou_dict = model_iou(voxel_ests, voxel_gt_list, cfg.trainer.loss_weights)
 
@@ -411,7 +411,7 @@ def test_sample(model, sample, cfg, device):
 
     imgL, imgR, voxel_gt = sample['left'], sample['right'], sample['voxel_grid']
     calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103'], 'left_top': sample['left_top']}
+                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
 
     if torch.cuda.is_available():
         imgL = imgL.to(device, non_blocking=True)
@@ -419,7 +419,7 @@ def test_sample(model, sample, cfg, device):
         for i in range(len(voxel_gt)):
             voxel_gt[i] = voxel_gt[i].to(device, non_blocking=True)
 
-    voxel_ests = model(imgL, imgR, calib_meta=calib_meta, voxel_gt=None, training=False)
+    voxel_ests = model(imgL, imgR, calib_meta=calib_meta)
 
     loss, iou = model_loss(voxel_ests, voxel_gt, cfg.trainer.loss_weights, cfg.trainer.loss)
     iou_dict = model_iou(voxel_ests, voxel_gt, cfg.trainer.loss_weights)
