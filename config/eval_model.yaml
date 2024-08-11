@@ -4,6 +4,6 @@ defaults:
   - _self_
 
 # path to the checkpoint being evaluated
-ckpt_path: '.../best.ckpt'
+ckpt_path: './checkpoints/DS_occupancy.ckpt'
 # different depth ranges proportion for evaluation (0.0 - 1.0)
 depth_range: [0.5, 1.0]

@@ -1,5 +1,4 @@
 import hydra
-import numpy as np
 import torch.backends.cudnn as cudnn
 import torch.cuda
 from omegaconf import DictConfig
@@ -57,14 +56,14 @@ def eval_model(cfg: DictConfig):
         torch.cuda.synchronize()
         start = time.time()
         with torch.no_grad():
-            voxel_ests = model(imgL, imgR, calib_meta=calib_meta, voxel_gt=None, training=False)
+            voxel_ests = model(imgL, imgR, calib_meta=calib_meta)
             torch.cuda.synchronize()
             infer_time.append(time.time() - start)
             for voxel_pred in voxel_ests:
                 voxel_pred[voxel_pred < 0.5] = 0
                 voxel_pred[voxel_pred >= 0.5] = 1
         iou_dict.append(eval_metric(voxel_ests, voxel_gt, calc_IoU, depth_range=cfg.depth_range))
-        cd_dict.append(eval_metric(voxel_ests, voxel_gt, eval_cd, cfg.dataloader.ds_vox, depth_range=cfg.depth_range))
+        cd_dict.append(eval_metric(voxel_ests, voxel_gt, eval_cd, cfg.dataloader.vox, depth_range=cfg.depth_range))
 
     iou_mean = iou_dict.mean()
     cd_mean = cd_dict.mean()
@@ -130,7 +129,7 @@ def eval_ops(cfg: DictConfig):
                 voxel_gt[i] = voxel_gt[i].cuda()
 
         with torch.no_grad():
-            macs, params = clever_format(profile(model, inputs=(imgL, imgR, calib_meta, None, False)), '%.3f')
+            macs, params = clever_format(profile(model, inputs=(imgL, imgR, calib_meta)), '%.3f')
 
     print(f'MACS: {macs}, PARAMS: {params}')
 

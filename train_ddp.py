@@ -239,7 +239,7 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
     if utils.is_main_process() and cfg.use_wandb:
         # log inside wandb
         if cfg.trainer.resume:
-            wandb.init(project="stereo-voxel-former", entity="stereo-voxel-team", id=wandb_run_id, resume=True)
+            wandb.init(project="odtformer", entity="jerrydty", id=wandb_run_id, resume=True)
         else:
             wandb.init(project="stereo-voxel-former", entity="stereo-voxel-team", id=wandb_run_id)
 

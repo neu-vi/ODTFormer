@@ -7,3 +7,4 @@ temp.py
 */zed_dataset/
 *.pyc
 .DS_Store
+checkpoints/

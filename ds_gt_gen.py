@@ -5,7 +5,6 @@ from tqdm import tqdm
 import numpy as np
 
 from datasets import VoxelDSDatasetCalib
-from datasets.data_io import get_transform
 
 root = '/work/vig/Datasets/DrivingStereo'
 
@@ -37,7 +36,6 @@ def get_gt_voxel(filename, max_array=1, array_id=1):
         w, h = left_img.size
         crop_w, crop_h = 880, 400
 
-        processed = get_transform(dataloader.color_jitter)
         left_top = [0, 0]
 
         if dataloader.transform:
@@ -63,7 +61,7 @@ def get_gt_voxel(filename, max_array=1, array_id=1):
         try:
             for level in range(len(dataloader.grid_sizes)):
                 vox_grid_gt, cloud_np_gt = dataloader.calc_voxel_grid(
-                    filtered_cloud_gt, level=level, parent_grid=parent_grid, occupied_gate=10 if level == 4 else 20)
+                    filtered_cloud_gt, level=level, parent_grid=parent_grid)
                 vox_grid_gt = torch.from_numpy(vox_grid_gt)
 
                 parent_grid = vox_grid_gt
