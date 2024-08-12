@@ -241,12 +241,12 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
         if cfg.trainer.resume:
             wandb.init(project="odtformer", entity="jerrydty", id=wandb_run_id, resume=True)
         else:
-            wandb.init(project="stereo-voxel-former", entity="stereo-voxel-team", id=wandb_run_id)
+            wandb.init(project="odtformer", entity="jerrydty", id=wandb_run_id)
 
         wandb.run.name = log_info
         wandb.save()
 
-    best_checkpoint_loss = 100
+    best_checkpoint_loss = float('inf')
     for epoch_idx in range(start_epoch, cfg.trainer.epochs):
 
         # training
