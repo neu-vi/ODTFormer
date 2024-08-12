@@ -55,7 +55,7 @@ We organize the dataset by the following file tree
 │               └── ...
 ├── train-depth-map                                                     # training depth maps
 │       ├── 2018-07-09-16-11-56
-│       │       └── *.jpg
+│       │       └── *.png
 │       └── ...
 ├── train-gt                                                            # precomputed training ground-truth labels
 │       ├── 2018-07-09-16-11-56
