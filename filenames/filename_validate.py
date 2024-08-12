@@ -2,13 +2,13 @@ import os
 from tqdm import tqdm
 
 # change dataset root directory accordingly
-root = '/work/vig/Datasets/KITTI_VoxelFlow'
+root = '.../DrivingStereo'
 if not os.path.exists(root):
     print('Dataset path invalid')
     exit(1)
 
 # change index filename accordingly
-with open('KITTI_raw.txt') as f:
+with open('DS_train_gt_calib.txt') as f:
     for line in tqdm(f.readlines(), 'Validating filepaths'):
         files = line.split()
         for _ in files:

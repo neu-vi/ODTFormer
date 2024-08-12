@@ -31,41 +31,41 @@ Download and extract DrivingStereo training, testing images with depth data, and
 We organize the dataset by the following file tree
 ```
 .
-├── calib                                                               # training camera calibration parameters
+├── calib
 │       └── half-image-calib
 │               └── *.txt
-├── test-calib                                                          # testing camera calibration parameters
+├── test-calib
 │       └── half-image-calib
 │               └── *.txt
-├── test-depth-map                                                      # testing depth maps
+├── test-depth-map
 │       └── depth-map-half-size
 │               ├── 2018-07-11-14-48-52_2018-07-11-14-50-08-769.png
 │               └── ...
-├── test-gt                                                             # precomputed testing ground-truth labels
+├── test-gt                                                             # precomputed testing ground-truth labels (generated)
 │       └── gt-half-size
 │               ├── 2018-07-11-14-48-52_2018-07-11-14-50-08-769.pt
 │               └── ...
-├── test-left-image                                                     # testing left images
+├── test-left-image
 │       └── left-image-half-size
 │               ├── 2018-07-11-14-48-52_2018-07-11-14-50-08-769.jpg
 │               └── ...
-├── test-right-image                                                    # testing right images
+├── test-right-image
 │       └── right-image-half-size
 │               ├── 2018-07-11-14-48-52_2018-07-11-14-50-08-769.jpg
 │               └── ...
-├── train-depth-map                                                     # training depth maps
+├── train-depth-map
 │       ├── 2018-07-09-16-11-56
 │       │       └── *.png
 │       └── ...
-├── train-gt                                                            # precomputed training ground-truth labels
+├── train-gt                                                            # precomputed training ground-truth labels (generated)
 │       ├── 2018-07-09-16-11-56
 │       │       └── *.pt
 │       └── ...
-├── train-left-image                                                    # training left images
+├── train-left-image
 │       ├── 2018-07-09-16-11-56
 │       │       └── *.jpg
 │       └── ...
-└── train-right-image                                                   # training right images
+└── train-right-image
         ├── 2018-07-09-16-11-56
         │       └── *.jpg
         └── ...
@@ -77,6 +77,12 @@ experiments show that such practice would consume excessive computation resource
 efficiency.
 Thus, we provide an implementation for precomputing and storing ground-truth voxel occupancy labels compatible with 
 Slurm array jobs within [ds_gt_gen.py](ds_gt_gen.py).
+
+To check the validity of the dataset index filepaths, update the directory and file paths accordingly and run 
+[filenames/filename_validate.py](filenames/filename_validate.py) as below:
+```bash
+python filenames/filename_validate.py
+```
 
 ## Code Structure
 **Config files:**
