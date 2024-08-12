@@ -1,6 +1,6 @@
 defaults:
   - model: odtformer
-  - dataloader: ds_dataloader
+  - dataloader: kitti_dataloader
   - trainer: trainer_full
   - optimizer: adamw
   - dist: ddp

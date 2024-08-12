@@ -174,3 +174,30 @@ def eval_metric(voxel_ests, voxel_gt, metric_func, *args, depth_range=None):
         raise NotImplementedError
 
     return out_dict
+
+
+def scene_epe(vox_flow_est, vox_flow_gt):
+    assert vox_flow_est.shape == vox_flow_gt.shape, f'Estimated shape: {vox_flow_est.shape}, ' \
+                                                    f'ground truth shape: {vox_flow_gt.shape}'
+
+    epe = torch.norm(vox_flow_est - vox_flow_gt, dim=-1)
+    return torch.mean(epe)
+
+
+def foreground_epe(vox_flow_est, vox_flow_gt, occupancy_mask):
+    assert vox_flow_est.shape == vox_flow_gt.shape, f'Estimated shape: {vox_flow_est.shape}, ' \
+                                                    f'ground truth shape: {vox_flow_gt.shape}'
+    assert vox_flow_est.shape[:-1] == occupancy_mask.shape, f'Estimated shape: {vox_flow_est.shape[:-1]}, ' \
+                                                            f'ground truth shape: {occupancy_mask.shape}'
+    occupancy_mask = occupancy_mask.clone().detach()
+    occupancy_mask[occupancy_mask < 0.5] = 0
+    occupancy_mask[occupancy_mask >= 0.5] = 1
+    # edge case
+    if torch.sum(occupancy_mask) == 0:
+        return torch.tensor(0.)
+
+    occupancy_mask = occupancy_mask.bool()
+    foreground_flow_est = vox_flow_est[occupancy_mask]
+    foreground_flow_gt = vox_flow_gt[occupancy_mask]
+    epe = torch.norm(foreground_flow_est - foreground_flow_gt, dim=-1)
+    return torch.mean(epe)

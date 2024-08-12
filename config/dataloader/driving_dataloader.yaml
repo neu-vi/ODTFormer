@@ -1,0 +1,10 @@
+defaults:
+  - dataset: driving_voxel_flow
+  - _self_
+
+batch_size: 8
+test_batch_size: 1
+workers: 16
+roi: [-9, 9, -3, 3, 0, 30]
+vox: [3, 1.5, 0.75, 0.375]
+resize_shape: [400, 880]

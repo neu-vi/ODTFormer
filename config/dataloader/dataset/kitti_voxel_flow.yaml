@@ -1,0 +1,24 @@
+filepath: '.../KITTI_VoxelFlow'
+
+train_dataset:
+  _target_: datasets.KITTIVoxelFLow
+  datapath: ${dataloader.dataset.filepath}
+  list_filename: '.../ODTFormer/filenames/KITTI_flow_train.txt'
+  training: True
+  roi_scale: ${dataloader.roi}
+  voxel_sizes: ${dataloader.vox}
+  transform: True
+  color_jitter: True
+  filter_ground: True
+  resize_shape: ${dataloader.resize_shape}
+
+test_dataset:
+  _target_: datasets.KITTIVoxelFLow
+  datapath: ${dataloader.dataset.filepath}
+  list_filename: '.../ODTFormer/filenames/KITTI_flow_valid.txt'
+  training: False
+  roi_scale: ${dataloader.roi}
+  voxel_sizes: ${dataloader.vox}
+  transform: True
+  filter_ground: True
+  resize_shape: ${dataloader.resize_shape}

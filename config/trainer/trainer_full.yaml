@@ -1,6 +1,6 @@
 epochs: 20
 logdir: 'logs'
-logdir_name: 'odtformer'
+logdir_name: 'odtformer-flow'
 # load checkpoint path for resume training
 loadckpt: ''
 resume: False

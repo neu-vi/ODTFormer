@@ -1,8 +1,8 @@
 defaults:
-  - dataset: kitti_voxel
+  - dataset: kitti_voxel_flow
   - _self_
 
-batch_size: 16
+batch_size: 8
 test_batch_size: 1
 workers: 16
 roi: [-9, 9, -3, 3, 0, 30]

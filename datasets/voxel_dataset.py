@@ -94,11 +94,10 @@ class VoxelDataset(Dataset):
         filtered_cloud = cloud[filter_mask]
         return filtered_cloud
 
-    def calc_voxel_grid(self, filtered_cloud, level, parent_grid=None, get_flow=False,
+    def calc_voxel_grid(self, filtered_cloud, level, parent_grid=None, occupied_gate=20, get_flow=False,
                         *,
                         rtol: float = 0.3):
-        occupied_gate_ = self.occupied_gates[level]
-        occupied_gate = occupied_gate_ if occupied_gate_ is not None else 1
+        occupied_gate = occupied_gate if occupied_gate is not None else 1
         assert occupied_gate > 0
 
         vox_size = self.voxel_sizes[level]
