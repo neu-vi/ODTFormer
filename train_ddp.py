@@ -14,7 +14,7 @@ import torch.multiprocessing as mp
 
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
-from models import model_loss, model_iou
+from models import VoxelFlow, model_loss, model_iou, scene_epe, foreground_epe
 from utils import *
 import logging
 import coloredlogs
@@ -121,7 +121,7 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
         # create summary logger
         logger = SummaryWriter(cfg.trainer.logdir)
 
-    model = hydra.utils.instantiate(cfg.model, _recursive_=False)
+    model = VoxelFlow(cfg.model, cfg.dataloader.roi, cfg.dataloader.vox[-1], (9, 3, 9))
     if utils.is_main_process():
         log.info(model)
         log.info('Number of parameters: {:.6f}M'.format(sum([p.data.nelement() for p in model.parameters()]) / 1000000))
@@ -203,26 +203,8 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
 
     # load parameters
     start_epoch = 0
-    all_saved_ckpts = [fn for fn in os.listdir(
-        cfg.trainer.logdir) if fn.endswith(".ckpt") and ("best" not in fn)]
-    if cfg.trainer.resume and len(all_saved_ckpts) > 0:
-        # find all checkpoints file and sort according to epoch id
-        all_saved_ckpts = sorted(all_saved_ckpts, key=lambda x: int(x.split('_')[-1].split('.')[0]))
-        wandb_run_id = all_saved_ckpts[-1].split('_')[0]
-        # use the latest checkpoint file
-        loadckpt = os.path.join(cfg.trainer.logdir, all_saved_ckpts[-1])
-        if utils.is_main_process():
-            log.info("Loading the latest model in logdir: {}".format(loadckpt))
-        if cfg.dist.gpu == -1:
-            state_dict = torch.load(loadckpt)
-        elif torch.cuda.is_available():
-            # Map model to be loaded to specified single gpu.
-            loc = 'cuda:{}'.format(cfg.dist.gpu)
-            state_dict = torch.load(loadckpt, map_location=loc)
-        model.load_state_dict(state_dict['model'])
-        optimizer.load_state_dict(state_dict['optimizer'])
-        start_epoch = state_dict['epoch'] + 1
-    elif cfg.trainer.loadckpt:
+    if cfg.trainer.loadckpt is not None:
+        state_dict = None
         # load the checkpoint file specified by args.loadckpt
         if utils.is_main_process():
             log.info("Loading model {}".format(cfg.trainer.loadckpt))
@@ -232,135 +214,128 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
             # Map model to be loaded to specified single gpu.
             loc = 'cuda:{}'.format(cfg.dist.gpu)
             state_dict = torch.load(cfg.trainer.loadckpt, map_location=loc)
-        model.load_state_dict(state_dict['model'])
+
+        state_dict = state_dict['model']
+        if list(state_dict.keys())[0].split('.')[1] != 'voxel_net':
+            new_state_dict = {}
+            for k, v in state_dict.items():
+                splits = k.split('.')
+                splits.insert(1, 'voxel_net')
+                k = '.'.join(splits)
+                new_state_dict[k] = v
+            state_dict = new_state_dict
+
+        # change strict to False if loading from occupancy checkpoints
+        model.load_state_dict(state_dict, strict=True)
     if utils.is_main_process():
         log.info("Start at epoch {}".format(start_epoch))
 
     if utils.is_main_process() and cfg.use_wandb:
-        # log inside wandb
-        if cfg.trainer.resume:
-            wandb.init(project="odtformer", entity="jerrydty", id=wandb_run_id, resume=True)
-        else:
-            wandb.init(project="stereo-voxel-former", entity="stereo-voxel-team", id=wandb_run_id)
-
+        log.info("Start at epoch {}".format(start_epoch))
+        wandb.init(project="odtformer", entity="jerrydty", id=wandb_run_id)
         wandb.run.name = log_info
         wandb.save()
 
-    best_checkpoint_loss = 100
+    best_checkpoint_voxel_loss = float('inf')
     for epoch_idx in range(start_epoch, cfg.trainer.epochs):
-
         # training
         avg_train_scalars = AverageMeterDict()
-        avg_train_iou = AverageMeterDict()
+        avg_train_iou_0 = AverageMeterDict()
+        avg_train_iou_1 = AverageMeterDict()
         for batch_idx, sample in enumerate(TrainImgLoader):
             global_step = len(TrainImgLoader) * epoch_idx + batch_idx
             start_time = time.time()
             do_summary = global_step % cfg.trainer.summary_freq == 0
-            loss, scalar_outputs, voxel_outputs, iou_dict = train_sample(
-                model, sample, optimizer, lr_scheduler, cfg, device
-            )
+            sum_loss, iou_dict_0, iou_dict_1, scalar_outputs = train_sample(model, sample, optimizer, lr_scheduler, cfg,
+                                                                            device)
 
             if utils.is_main_process():
                 if do_summary:
-                    save_scalars(logger, 'train', scalar_outputs, global_step)
                     last_lr = cfg.optimizer.lr
                     if lr_scheduler is not None:
                         last_lr = lr_scheduler.get_last_lr()[0]
-                    log.info(
-                        'Epoch {}/{}, Iter {}/{}, train loss = {:.3f}, IoU = {:.3f}, lr: {:.9f}, time = {:.3f}'.format(
-                            epoch_idx,
-                            cfg.trainer.epochs,
-                            batch_idx,
-                            len(TrainImgLoader),
-                            loss,
-                            iou_dict["sum"],
-                            last_lr,
-                            time.time() - start_time))
-                    if cfg.use_wandb:
-                        wandb.log({"train_IoU": iou_dict['sum'], "train_loss": loss})
 
+                    log_str = 'Epoch {}/{}, Iter {}/{}, train loss = {:.3f}, IoU_0 = {:.3f}, IoU_1 = {:.3f}, ' \
+                              'lr: {:.9f}, time = {:.3f}'.format(epoch_idx,
+                                                                 cfg.trainer.epochs,
+                                                                 batch_idx,
+                                                                 len(TrainImgLoader),
+                                                                 sum_loss,
+                                                                 iou_dict_0['sum'],
+                                                                 iou_dict_1['sum'],
+                                                                 last_lr,
+                                                                 time.time() - start_time)
+                    log.info(log_str)
+
+                    if cfg.use_wandb:
+                        wandb.log({'train_IoU_0': iou_dict_0['sum'], 'train_IoU_1': iou_dict_1['sum'],
+                                   'train_voxel_loss': scalar_outputs['voxel_loss'],
+                                   'train_flow_loss': scalar_outputs['epe_loss']})
                 avg_train_scalars.update(scalar_outputs)
-                avg_train_iou.update(iou_dict)
-                del scalar_outputs, voxel_outputs, iou_dict
+                avg_train_iou_0.update(iou_dict_0)
+                avg_train_iou_1.update(iou_dict_1)
+                del iou_dict_0, iou_dict_1
 
                 # saving checkpoints
                 if (epoch_idx + 1) % cfg.trainer.save_freq == 0:
                     checkpoint_data = {'epoch': epoch_idx, 'model': model.state_dict(
                     ), 'optimizer': optimizer.state_dict()}
-                    torch.save(
-                        checkpoint_data,
-                        "{}/{}_checkpoint_{:0>6}.ckpt".format(cfg.trainer.logdir, wandb_run_id, epoch_idx))
+                    torch.save(checkpoint_data,
+                               "{}/{}_checkpoint_{:0>6}.ckpt".format(cfg.trainer.logdir, wandb_run_id, epoch_idx))
 
         if utils.is_main_process():
             avg_train_scalars = avg_train_scalars.mean()
-            avg_train_iou = avg_train_iou.mean()
-            log.info(f"avg_train_scalars {avg_train_scalars}")
+            avg_train_iou_0 = avg_train_iou_0.mean()
+            avg_train_iou_1 = avg_train_iou_1.mean()
+
+            log.info(f"avg_train_voxel_loss: {avg_train_scalars['voxel_loss']}, "
+                     f"avg_train_epe_loss: {avg_train_scalars['epe_loss']}")
+
             if cfg.use_wandb:
-                wandb.log({'avg_train_loss': avg_train_scalars['loss'], 'weighted_avg_train_IoU': avg_train_iou['sum'],
-                           'train_last_level_IoU': avg_train_iou['last']})
+                wandb.log({'avg_train_voxel_loss': avg_train_scalars['voxel_loss'],
+                           'avg_train_epe_loss': avg_train_scalars['epe_loss'],
+                           'weighted_avg_train_IoU_0': avg_train_iou_0['sum'],
+                           'weighted_avg_train_IoU_1': avg_train_iou_1['sum'],
+                           'train_last_level_IoU_0': avg_train_iou_0['last'],
+                           'train_last_level_IoU_1': avg_train_iou_1['last']})
 
         gc.collect()
 
         # testing
         avg_test_scalars = AverageMeterDict()
-        avg_test_iou = AverageMeterDict()
+        avg_test_iou_0 = AverageMeterDict()
+        avg_test_iou_1 = AverageMeterDict()
         for batch_idx, sample in enumerate(TestImgLoader):
-            global_step = len(TestImgLoader) * epoch_idx + batch_idx
             start_time = time.time()
-            do_summary = global_step % cfg.trainer.summary_freq == 0
-            do_vis_log = batch_idx % cfg.trainer.vis_log_freq == 0
-            test_loss_tensor, test_iou_tensor, test_loss, scalar_outputs, voxel_outputs, iou_dict = test_sample(
-                model, sample, cfg, device
-            )
+            iou_dict_0, iou_dict_1, scalar_outputs, voxel_outputs = test_sample(model, sample, cfg, device)
             if utils.is_main_process():
-                if do_summary:
-                    save_scalars(logger, 'test', scalar_outputs, global_step)
-                    log.info(
-                        'Epoch {}/{}, Iter {}/{}, test loss = {:.3f}, IoU = {:.3f}, time = {:.3f}'.format(epoch_idx,
-                                                                                                          cfg.trainer.epochs,
-                                                                                                          batch_idx,
-                                                                                                          len(
-                                                                                                              TestImgLoader),
-                                                                                                          test_loss,
-                                                                                                          iou_dict[
-                                                                                                              "sum"],
-                                                                                                          time.time() - start_time))
-
-                if do_vis_log and cfg.use_wandb:
-                    all_cloud_gt = np.frombuffer(sample['point_cloud'][0], dtype=np.float32).reshape(-1, 3)
-                    voxel_est, voxel_gt = voxel_outputs
-                    start = [cfg.dataloader.roi[0], cfg.dataloader.roi[2], cfg.dataloader.roi[4]]
-                    # change by level
-                    voxel_size = cfg.dataloader.vox[1]
-                    corners_gt = utils.get_voxel_bbox(voxel_gt, start, [12, 4, 20], voxel_size)
-                    corners_est = utils.get_voxel_bbox(voxel_est, start, [12, 4, 20], voxel_size,
-                                                       bbox_size=voxel_size / 2, color=[0, 255, 255])
-                    #################
-                    cloud_gt = utils.get_cmap_cloud(all_cloud_gt, cfg.dataloader.roi)
-
-                    point_scene = wandb.Object3D(
-                        {'type': 'lidar/beta', 'boxes': np.concatenate([corners_gt, corners_est], axis=0),
-                         'points': cloud_gt})
-                    wandb.log({f'test_point_scene / epoch {epoch_idx}': point_scene})
+                log.info(
+                    'Epoch {}/{}, Iter {}/{}, time = {:.3f}'.format(epoch_idx, cfg.trainer.epochs, batch_idx,
+                                                                    len(TestImgLoader), time.time() - start_time))
 
                 avg_test_scalars.update(scalar_outputs)
-                avg_test_iou.update(iou_dict)
-                del scalar_outputs, voxel_outputs, iou_dict
+                avg_test_iou_0.update(iou_dict_0)
+                avg_test_iou_1.update(iou_dict_1)
+                del scalar_outputs, voxel_outputs, iou_dict_0, iou_dict_1
 
         if utils.is_main_process():
             avg_test_scalars = avg_test_scalars.mean()
-            avg_test_iou = avg_test_iou.mean()
+            avg_test_iou_0 = avg_test_iou_0.mean()
+            avg_test_iou_1 = avg_test_iou_1.mean()
 
-            save_scalars(logger, 'fulltest', avg_test_scalars,
-                         len(TrainImgLoader) * (epoch_idx + 1))
             log.info(f"avg_test_scalars {avg_test_scalars}")
+
             if cfg.use_wandb:
-                wandb.log({'avg_test_loss': avg_test_scalars['loss'], 'weighted_avg_test_IoU': avg_test_iou['sum'],
-                           'test_last_level_IoU': avg_test_iou['last']})
+                wandb.log({'avg_test_voxel_loss': avg_test_scalars['voxel_loss'],
+                           'avg_test_epe_loss': avg_test_scalars['epe_loss'],
+                           'weighted_avg_test_IoU_0': avg_test_iou_0['sum'],
+                           'weighted_avg_test_IoU_1': avg_test_iou_1['sum'],
+                           'test_last_level_IoU_0': avg_test_iou_0['last'],
+                           'test_last_level_IoU_1': avg_test_iou_1['last']})
 
             # saving new best checkpoint
-            if avg_test_scalars['loss'] < best_checkpoint_loss:
-                best_checkpoint_loss = avg_test_scalars['loss']
+            if avg_test_scalars['voxel_loss'] < best_checkpoint_voxel_loss:
+                best_checkpoint_voxel_loss = avg_test_scalars['voxel_loss']
                 log.debug("Overwriting best checkpoint")
                 checkpoint_data = {'epoch': epoch_idx, 'model': model.state_dict(
                 ), 'optimizer': optimizer.state_dict()}
@@ -373,25 +348,41 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
 def train_sample(model, sample, optimizer, lr_scheduler, cfg, device):
     model.train()
 
-    imgL, imgR, voxel_gt_list = sample['left'], sample['right'], sample['voxel_grid']
-    calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
+    imgL_0, imgR_0 = sample['left_0'], sample['right_0']
+    imgL_1, imgR_1 = sample['left_1'], sample['right_1']
+    voxel_gt_list_0, voxel_gt_list_1 = sample['voxel_grid_0'], sample['voxel_grid_1']
+    flow_gt = sample['voxel_flow']
+    calib_meta_0 = {'T_world_cam_101': sample['T_world_cam_101_0'], 'T_world_cam_103': sample['T_world_cam_103_0'],
+                    'cam_101': sample['cam_101_0'], 'cam_103': sample['cam_103_0']}
+    calib_meta_1 = {'T_world_cam_101': sample['T_world_cam_101_1'], 'T_world_cam_103': sample['T_world_cam_103_1'],
+                    'cam_101': sample['cam_101_1'], 'cam_103': sample['cam_103_1']}
 
     if torch.cuda.is_available():
-        imgL = imgL.to(device, non_blocking=True)
-        imgR = imgR.to(device, non_blocking=True)
-        for i in range(len(voxel_gt_list)):
-            voxel_gt_list[i] = voxel_gt_list[i].to(device, non_blocking=True)
+        imgL_0 = imgL_0.to(device, non_blocking=True)
+        imgR_0 = imgR_0.to(device, non_blocking=True)
+        imgL_1 = imgL_1.to(device, non_blocking=True)
+        imgR_1 = imgR_1.to(device, non_blocking=True)
+        flow_gt = flow_gt.to(device, non_blocking=True)
+        for i in range(len(voxel_gt_list_0)):
+            voxel_gt_list_0[i] = voxel_gt_list_0[i].to(device, non_blocking=True)
+            voxel_gt_list_1[i] = voxel_gt_list_1[i].to(device, non_blocking=True)
 
     optimizer.zero_grad()
 
-    # with torch.cuda.amp.autocast():
-    voxel_ests = model(imgL, imgR, calib_meta=calib_meta)
-    loss, iou = model_loss(voxel_ests, voxel_gt_list, cfg.trainer.loss_weights, cfg.trainer.loss)
-    iou_dict = model_iou(voxel_ests, voxel_gt_list, cfg.trainer.loss_weights)
+    pair_0_kwargs = {'calib_meta': calib_meta_0}
+    pair_1_kwargs = {'calib_meta': calib_meta_1}
+    voxel_ests, flow_est = model((imgL_0, imgR_0), (imgL_1, imgR_1), training=True, pair_0_kwargs=pair_0_kwargs,
+                                 pair_1_kwargs=pair_1_kwargs)
+    loss_0, _ = model_loss(voxel_ests[0], voxel_gt_list_0, cfg.trainer.loss_weights, cfg.trainer.loss)
+    loss_1, _ = model_loss(voxel_ests[1], voxel_gt_list_1, cfg.trainer.loss_weights, cfg.trainer.loss)
+    iou_dict_0 = model_iou(voxel_ests[0], voxel_gt_list_0, cfg.trainer.loss_weights)
+    iou_dict_1 = model_iou(voxel_ests[1], voxel_gt_list_1, cfg.trainer.loss_weights)
 
-    scalar_outputs = {"loss": loss}
-    voxel_outputs = []
+    voxel_loss = (0.5 * loss_0 + 0.5 * loss_1).item()
+    epe_loss = scene_epe(flow_est, flow_gt)
+    # epe_loss = foreground_epe(flow_est, flow_gt, voxel_gt_list_0[-1])
+    loss = 3 * loss_0 + 3 * loss_1 + 4 * epe_loss
+    scalar_outputs = {'voxel_loss': voxel_loss, 'epe_loss': epe_loss.item()}
 
     loss.backward()
     optimizer.step()
@@ -401,7 +392,7 @@ def train_sample(model, sample, optimizer, lr_scheduler, cfg, device):
         lr_scheduler.step()
 
     # scaler.update()
-    return tensor2float(loss), tensor2float(scalar_outputs), voxel_outputs, tensor2float(iou_dict)
+    return loss.item(), tensor2float(iou_dict_0), tensor2float(iou_dict_1), tensor2float(scalar_outputs)
 
 
 # test one sample
@@ -409,26 +400,44 @@ def train_sample(model, sample, optimizer, lr_scheduler, cfg, device):
 def test_sample(model, sample, cfg, device):
     model.eval()
 
-    imgL, imgR, voxel_gt = sample['left'], sample['right'], sample['voxel_grid']
-    calib_meta = {'T_world_cam_101': sample['T_world_cam_101'], 'T_world_cam_103': sample['T_world_cam_103'],
-                  'cam_101': sample['cam_101'], 'cam_103': sample['cam_103']}
+    imgL_0, imgR_0 = sample['left_0'], sample['right_0']
+    imgL_1, imgR_1 = sample['left_1'], sample['right_1']
+    voxel_gt_list_0, voxel_gt_list_1 = sample['voxel_grid_0'], sample['voxel_grid_1']
+    flow_gt = sample['voxel_flow']
+    calib_meta_0 = {'T_world_cam_101': sample['T_world_cam_101_0'], 'T_world_cam_103': sample['T_world_cam_103_0'],
+                    'cam_101': sample['cam_101_0'], 'cam_103': sample['cam_103_0']}
+    calib_meta_1 = {'T_world_cam_101': sample['T_world_cam_101_1'], 'T_world_cam_103': sample['T_world_cam_103_1'],
+                    'cam_101': sample['cam_101_1'], 'cam_103': sample['cam_103_1']}
 
     if torch.cuda.is_available():
-        imgL = imgL.to(device, non_blocking=True)
-        imgR = imgR.to(device, non_blocking=True)
-        for i in range(len(voxel_gt)):
-            voxel_gt[i] = voxel_gt[i].to(device, non_blocking=True)
+        imgL_0 = imgL_0.to(device, non_blocking=True)
+        imgR_0 = imgR_0.to(device, non_blocking=True)
+        imgL_1 = imgL_1.to(device, non_blocking=True)
+        imgR_1 = imgR_1.to(device, non_blocking=True)
+        flow_gt = flow_gt.to(device, non_blocking=True)
+        for i in range(len(voxel_gt_list_0)):
+            voxel_gt_list_0[i] = voxel_gt_list_0[i].to(device, non_blocking=True)
+            voxel_gt_list_1[i] = voxel_gt_list_1[i].to(device, non_blocking=True)
 
-    voxel_ests = model(imgL, imgR, calib_meta=calib_meta)
+    pair_0_kwargs = {'calib_meta': calib_meta_0}
+    pair_1_kwargs = {'calib_meta': calib_meta_1}
+    with torch.no_grad():
+        voxel_ests, flow_est = model((imgL_0, imgR_0), (imgL_1, imgR_1), training=False, pair_0_kwargs=pair_0_kwargs,
+                                     pair_1_kwargs=pair_1_kwargs)
+    loss_0, _ = model_loss(voxel_ests[0], voxel_gt_list_0, cfg.trainer.loss_weights, cfg.trainer.loss)
+    loss_1, _ = model_loss(voxel_ests[1], voxel_gt_list_1, cfg.trainer.loss_weights, cfg.trainer.loss)
+    iou_dict_0 = model_iou(voxel_ests[0], voxel_gt_list_0, cfg.trainer.loss_weights)
+    iou_dict_1 = model_iou(voxel_ests[1], voxel_gt_list_1, cfg.trainer.loss_weights)
 
-    loss, iou = model_loss(voxel_ests, voxel_gt, cfg.trainer.loss_weights, cfg.trainer.loss)
-    iou_dict = model_iou(voxel_ests, voxel_gt, cfg.trainer.loss_weights)
+    voxel_loss = (0.5 * loss_0 + 0.5 * loss_1).item()
+    epe_loss = scene_epe(flow_est, flow_gt)
+    # epe_loss = foreground_epe(flow_est, flow_gt, voxel_gt_list_0[-1])
+    scalar_outputs = {'voxel_loss': voxel_loss, 'epe_loss': epe_loss.item()}
 
-    scalar_outputs = {"loss": loss}
-    # level, batch
-    voxel_outputs = [voxel_ests[1][0], voxel_gt[1][0]]
+    # (pair,) level, batch
+    voxel_outputs = [voxel_ests[0][1][0], voxel_gt_list_0[1][0]]
 
-    return loss, iou, tensor2float(loss), tensor2float(scalar_outputs), voxel_outputs, tensor2float(iou_dict)
+    return tensor2float(iou_dict_0), tensor2float(iou_dict_1), tensor2float(scalar_outputs), voxel_outputs
 
 
 if __name__ == '__main__':

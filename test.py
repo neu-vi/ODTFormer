@@ -100,9 +100,9 @@ def eval_ops(cfg: DictConfig):
         imgL_0, imgR_0 = sample['left_0'], sample['right_0']
         imgL_1, imgR_1 = sample['left_1'], sample['right_1']
         calib_meta_0 = {'T_world_cam_101': sample['T_world_cam_101_0'], 'T_world_cam_103': sample['T_world_cam_103_0'],
-                        'cam_101': sample['cam_101_0'], 'cam_103': sample['cam_103_0'], 'left_top': sample['left_top']}
+                        'cam_101': sample['cam_101_0'], 'cam_103': sample['cam_103_0']}
         calib_meta_1 = {'T_world_cam_101': sample['T_world_cam_101_1'], 'T_world_cam_103': sample['T_world_cam_103_1'],
-                        'cam_101': sample['cam_101_1'], 'cam_103': sample['cam_103_1'], 'left_top': sample['left_top']}
+                        'cam_101': sample['cam_101_1'], 'cam_103': sample['cam_103_1']}
 
         if torch.cuda.is_available():
             imgL_0 = imgL_0.cuda()
