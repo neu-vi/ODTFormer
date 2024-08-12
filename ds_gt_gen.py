@@ -6,7 +6,7 @@ import numpy as np
 
 from datasets import VoxelDSDatasetCalib
 
-root = '/work/vig/Datasets/DrivingStereo'
+root = '.../DrivingStereo'
 
 
 def get_gt_voxel(filename, max_array=1, array_id=1):

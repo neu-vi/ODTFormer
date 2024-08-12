@@ -6,7 +6,7 @@ import numpy as np
 from datasets import *
 from models.wrappers import Camera
 
-root = '/work/vig/Datasets/KITTI_VoxelFlow'
+root = '.../KITTI_VoxelFlow'
 
 
 def get_gt_voxel(filename, max_array=1, array_id=1):

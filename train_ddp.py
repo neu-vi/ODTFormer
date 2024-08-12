@@ -107,7 +107,7 @@ def main_worker(gpu, ngpus_per_node, cfg, config=None):
     cfg.trainer.loss_weights = [float(item) for item in cfg.trainer.loss_weights.split(',')]
 
     if utils.is_main_process():
-        logdir = os.path.join(cfg.trainer.logdir, cfg.trainer.logdir_name) + '_'
+        logdir = os.path.join(cfg.trainer.logdir, cfg.trainer.logdir_name) + '#'
         counter = 0
         while os.path.exists(logdir + str(counter) + '/'):
             counter += 1

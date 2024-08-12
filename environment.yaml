@@ -1,0 +1,25 @@
+name: odtformer
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch-cuda=11.8
+  - pytorch==2.1.0
+  - torchvision==0.16.0
+  - fvcore
+  - einops
+  - coloredlogs
+  - matplotlib
+  - scipy
+  - pip:
+    - hydra-core
+    - iopath
+    - omegaconf
+    - opencv-python
+    - pytorch3d==0.7.5
+    - tensorboardx
+    - thop
+    - wandb
