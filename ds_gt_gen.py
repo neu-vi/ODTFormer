@@ -75,5 +75,5 @@ def get_gt_voxel(filename, max_array=1, array_id=1):
 if __name__ == '__main__':
     # get_gt_voxel('./filenames/DS_test_gt_calib.txt')
     # array_id = os.getenv("SLURM_ARRAY_TASK_ID")
-    get_gt_voxel('/work/vig/tianyed/StereoVoxelFormer/stereo-voxel-former/scripts/net/filenames/DS_train_gt_calib.txt',
+    get_gt_voxel('./filenames/DS_train_gt_calib.txt',
                  50, int(sys.argv[1]))
