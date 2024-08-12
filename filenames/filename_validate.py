@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 
 # change dataset root directory accordingly
-root = '/work/vig/Datasets/KITTI_VoxelFlow'
+root = '.../KITTI_VoxelFlow'
 if not os.path.exists(root):
     print('Dataset path invalid')
     exit(1)
