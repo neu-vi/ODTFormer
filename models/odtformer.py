@@ -251,7 +251,7 @@ class ODTFormer(nn.Module):
         deconv5 = self.deconv5(deconv4)
         out_5 = self.deconv5_out(deconv5).squeeze(1)
 
-        return [out_2, out_3, out_4, out_5]
+        return [out_2, out_3, out_4, out_5], deconv5
 
     def forward(self, imL, imR,
                 *,

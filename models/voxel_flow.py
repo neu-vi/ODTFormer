@@ -1,6 +1,5 @@
 # global
 import numpy as np
-import torch
 from torch import nn
 import hydra
 from tqdm import tqdm
@@ -27,8 +26,8 @@ class VoxelFlow(nn.Module):
     def forward(self, img_pair_0, img_pair_1,
                 *,
                 training=True, pair_0_kwargs, pair_1_kwargs, src_mask=None):
-        out_0, voxel_0 = self.voxel_net(*img_pair_0, training=training, **pair_0_kwargs)
-        out_1, voxel_1 = self.voxel_net(*img_pair_1, training=training, **pair_1_kwargs)
+        out_0, voxel_0 = self.voxel_net(*img_pair_0, **pair_0_kwargs)
+        out_1, voxel_1 = self.voxel_net(*img_pair_1, **pair_1_kwargs)
 
         if src_mask is None:
             src_mask = out_0[-1].clone().detach()
