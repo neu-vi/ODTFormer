@@ -8,4 +8,4 @@ ckpt_path: './checkpoints/DS_occupancy.ckpt'
 # different depth ranges proportion for evaluation (0.0 - 1.0)
 depth_range: [0.5, 1.0]
 # indices for sample visualization
-sample_indices: [0, 50, 100]
+# sample_indices: [0, 50, 100]
