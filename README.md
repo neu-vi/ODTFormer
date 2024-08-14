@@ -16,7 +16,17 @@ Northeastern University, Brown University
 
 ![Architecture](./assets/architecture.png)
 
-## Create Conda Environment
+## Installation
+### Requirements
+The code is tested on:
+* CentOS Linux 7
+* Python 3.10
+* PyTorch 2.1.0
+* Torchvision 0.16.0
+* CUDA 11.8
+* GCC 10.1.0
+
+### Create Conda Environment
 
 ```bash
 conda env create -f environment.yaml
