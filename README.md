@@ -163,10 +163,12 @@ See the [LICENSE](LICENSE) file for details about the license under which this c
 ## Citation
 If you find this repository useful in your research, please consider giving a star :star: and a citation
 ```bibtex
-@article{ding2024odtformer,
-  title={ODTFormer: Efficient Obstacle Detection and Tracking with Stereo Cameras Based on Transformer},
-  author={Ding, Tianye and Li, Hongyu and Jiang, Huaizu},
-  journal={arXiv preprint arXiv:2403.14626},
-  year={2024}
+@inproceedings{ding2024odtformer,
+          title={ODTFormer: Efficient Obstacle Detection and Tracking with Stereo Cameras Based on Transformer},
+          author={Ding, Tianye and Li, Hongyu and Jiang, Huaizu},
+          booktitle={2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
+          pages={9721--9728},
+          year={2024},
+          organization={IEEE}
 }
 ```
